@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Prueba RaceBox — EST Karting</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b1220; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; padding: 12px; padding-bottom: 40px; }
+  h1 { font-size: 1.1rem; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  h1 small { font-weight: normal; color: #94a3b8; font-size: .8rem; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  button { background: #2563eb; color: white; border: 0; border-radius: 8px; padding: 12px 16px; font-size: 1rem; font-weight: 600; }
+  button.secondary { background: #1e293b; color: #cbd5e1; }
+  button:disabled { opacity: .45; }
+  #status { padding: 8px 10px; border-radius: 8px; background: #131b2e; border: 1px solid #263049; font-size: .9rem; flex: 1 1 100%; }
+  #status.ok { border-color: #16a34a; }
+  #status.bad { border-color: #dc2626; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .tile { background: #131b2e; border: 1px solid #263049; border-radius: 10px; padding: 10px; }
+  .tile .k { color: #94a3b8; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+  .tile .v { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .tile .v small { font-size: .8rem; font-weight: normal; color: #94a3b8; }
+  .tile.big { grid-column: span 2; }
+  .tile.big .v { font-size: 3rem; }
+  .tile.warn .v { color: #f59e0b; }
+  .tile.good .v { color: #22c55e; }
+  #gball { width: 100%; max-width: 220px; aspect-ratio: 1; display: block; margin: 0 auto; }
+  #trail { width: 100%; aspect-ratio: 1; display: block; background: #0f172a; border-radius: 8px; }
+  details { margin-top: 12px; background: #131b2e; border: 1px solid #263049; border-radius: 10px; padding: 8px 10px; }
+  summary { cursor: pointer; color: #cbd5e1; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: .72rem; color: #94a3b8; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+  .note { color: #94a3b8; font-size: .8rem; margin-top: 10px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<h1>Prueba RaceBox <small>EST Karting · página de diagnóstico</small></h1>
+
+<div class="row">
+  <button id="btn-connect">Conectar RaceBox</button>
+  <button id="btn-disconnect" class="secondary" disabled>Desconectar</button>
+  <button id="btn-share" class="secondary" disabled>Compartir registro</button>
+  <div id="status">Sin conectar. Ábrelo en Bluefy (iPhone) o Chrome (Android) con el RaceBox encendido al lado.</div>
+</div>
+
+<div class="grid">
+  <div class="tile big"><div class="k">Velocidad</div><div class="v" id="speed">—<small> km/h</small></div></div>
+  <div class="tile" id="t-fix"><div class="k">GPS</div><div class="v" id="fix">—</div></div>
+  <div class="tile"><div class="k">Satélites</div><div class="v" id="sats">—</div></div>
+  <div class="tile"><div class="k">G lateral (X)</div><div class="v" id="gx">—<small> g</small></div></div>
+  <div class="tile"><div class="k">G frenada/aceleración (Y)</div><div class="v" id="gy">—<small> g</small></div></div>
+  <div class="tile"><div class="k">G vertical (Z)</div><div class="v" id="gz">—<small> g</small></div></div>
+  <div class="tile"><div class="k">Rumbo</div><div class="v" id="heading">—<small> °</small></div></div>
+  <div class="tile"><div class="k">Batería</div><div class="v" id="batt">—</div></div>
+  <div class="tile"><div class="k">Paquetes / seg</div><div class="v" id="rate">—<small> Hz</small></div></div>
+  <div class="tile"><div class="k">Precisión horizontal</div><div class="v" id="hacc">—<small> m</small></div></div>
+  <div class="tile"><div class="k">Altitud</div><div class="v" id="alt">—<small> m</small></div></div>
+  <div class="tile"><div class="k">Hora GPS (UTC)</div><div class="v" id="time" style="font-size:1.1rem">—</div></div>
+  <div class="tile"><div class="k">Posición</div><div class="v" id="pos" style="font-size:.85rem">—</div></div>
+  <div class="tile"><div class="k">Giro (Z)</div><div class="v" id="rotz">—<small> °/s</small></div></div>
+  <div class="tile"><div class="k">Paquetes OK / error</div><div class="v" id="counts">0 / 0</div></div>
+  <div class="tile"><div class="k">Bola de G</div><canvas id="gball" width="220" height="220"></canvas></div>
+  <div class="tile big"><div class="k">Recorrido (últimos 60 s, relativo)</div><canvas id="trail" width="400" height="400"></canvas></div>
+</div>
+
+<details>
+  <summary>Datos en bruto (para depurar)</summary>
+  <pre id="raw">—</pre>
+</details>
+<details>
+  <summary>Registro de eventos</summary>
+  <pre id="log"></pre>
+</details>
+
+<p class="note">
+  Esta página solo lee el RaceBox por Bluetooth y lo muestra aquí; no manda nada a ningún servidor.
+  Mientras esté conectada, la app oficial de RaceBox no podrá conectarse (el Mini solo admite una conexión).
+  Todo lo recibido se guarda en memoria; "Compartir registro" lo exporta como archivo.
+</p>
+
+<script>
+(() => {
+  "use strict";
+  // Protocolo RaceBox (Mini / Mini S / Micro): servicio "Nordic UART" y
+  // tramas UBX: B5 62 | clase | id | longitud (2, LE) | carga | CK_A CK_B.
+  // Datos = clase 0xFF id 0x01, carga de 80 bytes. Fuente: documentación
+  // pública de RaceBox (rev. 8); ver NOTAS del proyecto cuando llegue la copia oficial.
+  const NUS_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // el aparato → nosotros (notify)
+
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $("status");
+  const logEl = $("log");
+  const records = [];       // registro completo en memoria
+  let device = null, server = null, txChar = null;
+  let buffer = new Uint8Array(0);
+  let okCount = 0, errCount = 0;
+  let rateWindow = [];
+  const trail = [];         // {t, lat, lon}
+  let lastFix = null;
+
+  function log(msg) {
+    const t = new Date().toLocaleTimeString("es-ES");
+    logEl.textContent = `${t}  ${msg}\n` + logEl.textContent;
+    if (logEl.textContent.length > 6000) logEl.textContent = logEl.textContent.slice(0, 6000);
+  }
+  function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = cls || ""; }
+
+  // ---- Parseo de tramas UBX sobre un flujo de bytes (los avisos BLE pueden partir una trama) ----
+  function feed(chunk) {
+    const merged = new Uint8Array(buffer.length + chunk.length);
+    merged.set(buffer, 0); merged.set(chunk, buffer.length);
+    buffer = merged;
+    while (buffer.length >= 8) {
+      if (buffer[0] !== 0xb5 || buffer[1] !== 0x62) { buffer = buffer.slice(1); continue; }
+      const len = buffer[4] | (buffer[5] << 8);
+      const total = 6 + len + 2;
+      if (buffer.length < total) return; // esperar el resto
+      const frame = buffer.slice(0, total);
+      buffer = buffer.slice(total);
+      let a = 0, b = 0;
+      for (let i = 2; i < total - 2; i++) { a = (a + frame[i]) & 0xff; b = (b + a) & 0xff; }
+      if (a !== frame[total - 2] || b !== frame[total - 1]) { errCount++; log(`checksum incorrecto (clase ${hex(frame[2])} id ${hex(frame[3])}, ${len} bytes)`); continue; }
+      handleFrame(frame[2], frame[3], frame.slice(6, 6 + len));
+    }
+  }
+  const hex = (n) => "0x" + n.toString(16).padStart(2, "0");
+
+  function handleFrame(cls, id, payload) {
+    if (cls === 0xff && id === 0x01 && payload.length >= 80) { okCount++; handleData(payload); return; }
+    log(`trama ${hex(cls)}/${hex(id)} de ${payload.length} bytes (no es de datos)`);
+  }
+
+  function handleData(p) {
+    const dv = new DataView(p.buffer, p.byteOffset, p.byteLength);
+    const d = {
+      t: Date.now(),
+      itow: dv.getUint32(0, true),
+      year: dv.getUint16(4, true), month: p[6], day: p[7], hour: p[8], min: p[9], sec: p[10],
+      validity: p[11],
+      fix: p[20],            // 0 sin fix, 2 = 2D, 3 = 3D
+      fixFlags: p[21],
+      sats: p[23],
+      lon: dv.getInt32(24, true) / 1e7,
+      lat: dv.getInt32(28, true) / 1e7,
+      altWgs: dv.getInt32(32, true) / 1000,
+      altMsl: dv.getInt32(36, true) / 1000,
+      hAcc: dv.getUint32(40, true) / 1000,
+      vAcc: dv.getUint32(44, true) / 1000,
+      speedKmh: dv.getInt32(48, true) / 1000 * 3.6, // mm/s → km/h
+      heading: dv.getInt32(52, true) / 1e5,
+      pdop: dv.getUint16(64, true) / 100,
+      latLonFlags: p[66],
+      batt: p[67],
+      gx: dv.getInt16(68, true) / 1000, gy: dv.getInt16(70, true) / 1000, gz: dv.getInt16(72, true) / 1000,
+      rx: dv.getInt16(74, true) / 100, ry: dv.getInt16(76, true) / 100, rz: dv.getInt16(78, true) / 100,
+    };
+    records.push(d);
+    render(d, p);
+  }
+
+  function render(d, p) {
+    const now = Date.now();
+    rateWindow.push(now); while (rateWindow.length && rateWindow[0] < now - 2000) rateWindow.shift();
+    $("rate").innerHTML = (rateWindow.length / 2).toFixed(1) + "<small> Hz</small>";
+    $("speed").innerHTML = d.speedKmh.toFixed(1) + "<small> km/h</small>";
+    const fixText = d.fix === 3 ? "3D" : d.fix === 2 ? "2D" : "sin fix";
+    $("fix").textContent = fixText;
+    $("t-fix").className = "tile " + (d.fix === 3 ? "good" : "warn");
+    $("sats").textContent = d.sats;
+    $("gx").innerHTML = d.gx.toFixed(2) + "<small> g</small>";
+    $("gy").innerHTML = d.gy.toFixed(2) + "<small> g</small>";
+    $("gz").innerHTML = d.gz.toFixed(2) + "<small> g</small>";
+    $("heading").innerHTML = d.heading.toFixed(0) + "<small> °</small>";
+    const charging = !!(d.batt & 0x80), pct = d.batt & 0x7f;
+    $("batt").textContent = `${pct}%${charging ? " ⚡" : ""}`;
+    $("hacc").innerHTML = d.hAcc.toFixed(1) + "<small> m</small>";
+    $("alt").innerHTML = d.altMsl.toFixed(0) + "<small> m</small>";
+    $("time").textContent = `${String(d.hour).padStart(2, "0")}:${String(d.min).padStart(2, "0")}:${String(d.sec).padStart(2, "0")}  ${d.day}/${d.month}/${d.year}`;
+    $("pos").textContent = d.fix ? `${d.lat.toFixed(6)}, ${d.lon.toFixed(6)}` : "—";
+    $("rotz").innerHTML = d.rz.toFixed(0) + "<small> °/s</small>";
+    $("counts").textContent = `${okCount} / ${errCount}`;
+    if (okCount % 5 === 0) {
+      $("raw").textContent = Array.from(p).map((b) => b.toString(16).padStart(2, "0")).join(" ") + "\n\n" + JSON.stringify(d, null, 1);
+    }
+    drawGBall(d.gx, d.gy);
+    if (d.fix >= 2 && !(d.latLonFlags & 1)) { trail.push({ t: now, lat: d.lat, lon: d.lon }); while (trail.length && trail[0].t < now - 60000) trail.shift(); drawTrail(); }
+  }
+
+  function drawGBall(gx, gy) {
+    const c = $("gball"), ctx = c.getContext("2d"), r = c.width / 2;
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = "#263049"; ctx.lineWidth = 1;
+    for (const k of [0.5, 1, 1.5]) { ctx.beginPath(); ctx.arc(r, r, (k / 2) * r * 0.95, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(r, c.height); ctx.moveTo(0, r); ctx.lineTo(c.width, r); ctx.stroke();
+    const scale = r * 0.95 / 2; // 2 g = radio
+    const x = r + Math.max(-2, Math.min(2, gx)) * scale, y = r - Math.max(-2, Math.min(2, gy)) * scale;
+    ctx.fillStyle = "#f59e0b"; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawTrail() {
+    const c = $("trail"), ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    if (trail.length < 2) return;
+    const lat0 = trail[0].lat, lon0 = trail[0].lon, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
+    const pts = trail.map((q) => ({ x: (q.lon - lon0) * kx, y: (q.lat - lat0) * ky }));
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const q of pts) { minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y); }
+    const span = Math.max(maxX - minX, maxY - minY, 20), s = (c.width - 30) / span;
+    const ox = 15 - minX * s + ((c.width - 30) - (maxX - minX) * s) / 2, oy = 15 + maxY * s + ((c.height - 30) - (maxY - minY) * s) / 2;
+    ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 2; ctx.beginPath();
+    pts.forEach((q, i) => { const x = ox + q.x * s, y = oy - q.y * s; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+    ctx.stroke();
+    const last = pts[pts.length - 1];
+    ctx.fillStyle = "#f59e0b"; ctx.beginPath(); ctx.arc(ox + last.x * s, oy - last.y * s, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#94a3b8"; ctx.font = "11px system-ui"; ctx.fillText(`${span.toFixed(0)} m`, 6, c.height - 6);
+  }
+
+  // ---- Bluetooth ----
+  async function connect() {
+    if (!navigator.bluetooth) { setStatus("Este navegador no tiene Bluetooth para webs. En iPhone usa Bluefy; en Android, Chrome.", "bad"); return; }
+    try {
+      setStatus("Buscando… elige el RaceBox en la lista.");
+      device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: "RaceBox" }], optionalServices: [NUS_SERVICE, "device_information"] });
+      log(`elegido: ${device.name}`);
+      device.addEventListener("gattserverdisconnected", () => { setStatus(`${device.name}: desconectado.`, "bad"); $("btn-disconnect").disabled = true; $("btn-connect").disabled = false; log("desconectado"); });
+      setStatus(`Conectando con ${device.name}…`);
+      server = await device.gatt.connect();
+      const svc = await server.getPrimaryService(NUS_SERVICE);
+      txChar = await svc.getCharacteristic(NUS_TX);
+      await txChar.startNotifications();
+      txChar.addEventListener("characteristicvaluechanged", (ev) => feed(new Uint8Array(ev.target.value.buffer, ev.target.value.byteOffset, ev.target.value.byteLength)));
+      try {
+        const info = await server.getPrimaryService("device_information");
+        for (const [name, uuid] of [["modelo", "model_number_string"], ["serie", "serial_number_string"], ["firmware", "firmware_revision_string"], ["hardware", "hardware_revision_string"]]) {
+          try { const ch = await info.getCharacteristic(uuid); const v = await ch.readValue(); log(`${name}: ${new TextDecoder().decode(v)}`); } catch {}
+        }
+      } catch { log("sin servicio de información del aparato (no pasa nada)"); }
+      setStatus(`${device.name}: conectado, recibiendo datos.`, "ok");
+      $("btn-disconnect").disabled = false; $("btn-connect").disabled = true; $("btn-share").disabled = false;
+    } catch (e) {
+      setStatus(`No se pudo conectar: ${e.message || e}`, "bad");
+      log(`error: ${e.message || e}`);
+    }
+  }
+  function disconnect() { if (device && device.gatt.connected) device.gatt.disconnect(); }
+
+  async function share() {
+    const text = records.map((r) => JSON.stringify(r)).join("\n");
+    const name = `racebox-${new Date().toISOString().replace(/[:.]/g, "-")}.ndjson`;
+    const file = new File([text], name, { type: "application/x-ndjson" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Registro RaceBox" }); return; }
+    } catch (e) { log(`compartir: ${e.message || e}`); }
+    try { await navigator.clipboard.writeText(text); setStatus(`Registro copiado al portapapeles (${records.length} muestras).`, "ok"); }
+    catch { setStatus("No se pudo compartir ni copiar; abre 'Datos en bruto' y copia a mano.", "bad"); }
+  }
+
+  $("btn-connect").addEventListener("click", connect);
+  $("btn-disconnect").addEventListener("click", disconnect);
+  $("btn-share").addEventListener("click", share);
+  if (!navigator.bluetooth) setStatus("Este navegador no tiene Bluetooth para webs. En iPhone ábrelo en Bluefy; en Android, en Chrome.", "bad");
+  drawGBall(0, 0);
+})();
+</script>
+</body>
+</html>
