@@ -32,6 +32,7 @@
   details { margin-top: 12px; background: #131b2e; border: 1px solid #263049; border-radius: 10px; padding: 8px 10px; }
   summary { cursor: pointer; color: #cbd5e1; }
   pre { white-space: pre-wrap; word-break: break-all; font-size: .72rem; color: #94a3b8; margin: 6px 0 0; max-height: 220px; overflow: auto; }
+  input { background: #0f172a; color: #e2e8f0; border: 1px solid #263049; border-radius: 8px; padding: 12px; font-size: 1rem; flex: 1 1 160px; }
   .note { color: #94a3b8; font-size: .8rem; margin-top: 10px; line-height: 1.4; }
 </style>
 </head>
@@ -43,6 +44,12 @@
   <button id="btn-disconnect" class="secondary" disabled>Desconectar</button>
   <button id="btn-share" class="secondary" disabled>Compartir registro</button>
   <div id="status">Sin conectar. Ábrelo en Bluefy (iPhone) o Chrome (Android) con el RaceBox encendido al lado.</div>
+</div>
+
+<div class="row" id="live-row">
+  <input id="room" placeholder="código de sala (p.ej. emilios)" autocapitalize="none" autocomplete="off" />
+  <button id="btn-live" class="secondary" disabled>Emitir en directo</button>
+  <div id="live-status" class="note" style="flex:1 1 100%;margin:0">Elige un código de sala y, con el RaceBox conectado, pulsa "Emitir". En el PC abre esta misma página con <b>?ver=código</b> al final.</div>
 </div>
 
 <div class="grid">
@@ -91,6 +98,9 @@
   const NUS_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"; // el aparato → nosotros (notify)
 
   const $ = (id) => document.getElementById(id);
+  const PARAMS = new URLSearchParams(location.search);
+  const VIEW_ROOM = (PARAMS.get("ver") || "").trim().toLowerCase();   // ?ver=sala → modo espectador (PC)
+  const RELAY = PARAMS.get("relay") || "wss://estkarting.com:8445";     // relé de telemetría (relay/relay.js)
   const statusEl = $("status");
   const logEl = $("log");
   const records = [];       // registro completo en memoria
@@ -100,6 +110,9 @@
   let rateWindow = [];
   const trail = [];         // {t, lat, lon}
   let lastFix = null;
+  // Emisión en directo (móvil → relé → PC)
+  let liveWs = null, liveWanted = false, liveSent = 0;
+  const outbox = [];        // muestras pendientes de enviar (se acumulan sin cobertura)
 
   function log(msg) {
     const t = new Date().toLocaleTimeString("es-ES");
@@ -159,6 +172,8 @@
     };
     records.push(d);
     render(d, p);
+    // En directo: 1 de cada 5 muestras (5 Hz), acumulando si no hay cobertura (máx. 10 min).
+    if (liveWanted && okCount % 5 === 0) { outbox.push(d); if (outbox.length > 3000) outbox.shift(); }
   }
 
   function render(d, p) {
@@ -182,8 +197,8 @@
     $("pos").textContent = d.fix ? `${d.lat.toFixed(6)}, ${d.lon.toFixed(6)}` : "—";
     $("rotz").innerHTML = d.rz.toFixed(0) + "<small> °/s</small>";
     $("counts").textContent = `${okCount} / ${errCount}`;
-    if (okCount % 5 === 0) {
-      $("raw").textContent = Array.from(p).map((b) => b.toString(16).padStart(2, "0")).join(" ") + "\n\n" + JSON.stringify(d, null, 1);
+    if (okCount % 5 === 0 || !p) {
+      $("raw").textContent = (p ? Array.from(p).map((b) => b.toString(16).padStart(2, "0")).join(" ") + "\n\n" : "") + JSON.stringify(d, null, 1);
     }
     drawGBall(d.gx, d.gy);
     if (d.fix >= 2 && !(d.latLonFlags & 1)) { trail.push({ t: now, lat: d.lat, lon: d.lon }); while (trail.length && trail[0].t < now - 60000) trail.shift(); drawTrail(); }
@@ -239,7 +254,7 @@
         }
       } catch { log("sin servicio de información del aparato (no pasa nada)"); }
       setStatus(`${device.name}: conectado, recibiendo datos.`, "ok");
-      $("btn-disconnect").disabled = false; $("btn-connect").disabled = true; $("btn-share").disabled = false;
+      $("btn-disconnect").disabled = false; $("btn-connect").disabled = true; $("btn-share").disabled = false; $("btn-live").disabled = false;
     } catch (e) {
       setStatus(`No se pudo conectar: ${e.message || e}`, "bad");
       log(`error: ${e.message || e}`);
@@ -258,11 +273,64 @@
     catch { setStatus("No se pudo compartir ni copiar; abre 'Datos en bruto' y copia a mano.", "bad"); }
   }
 
+  // ---- Directo: emisor (móvil) ----
+  function liveConnect() {
+    const code = $("room").value.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{3,32}$/.test(code)) { $("live-status").textContent = "Código de sala: de 3 a 32 letras o números, sin espacios."; return; }
+    try { localStorage.setItem("racebox_room", code); } catch {}
+    liveWanted = true;
+    $("btn-live").textContent = "Parar directo";
+    openLive(code);
+  }
+  function openLive(code) {
+    if (!liveWanted) return;
+    $("live-status").textContent = "Conectando con el relé…";
+    liveWs = new WebSocket(`${RELAY}/?room=${encodeURIComponent(code)}&role=send`);
+    liveWs.onopen = () => { $("live-status").innerHTML = `Emitiendo en la sala <b>${code}</b>. En el PC: <b>${location.origin}${location.pathname}?ver=${code}</b>`; log("directo: conectado al relé"); };
+    liveWs.onmessage = (ev) => {
+      try { const m = JSON.parse(ev.data); if (m.type === "room") $("live-status").innerHTML = `Emitiendo en <b>${code}</b> · ${m.viewers} viendo · ${liveSent} enviadas · ${outbox.length} pendientes. En el PC: <b>?ver=${code}</b>`; } catch {}
+    };
+    liveWs.onclose = () => { liveWs = null; if (liveWanted) { $("live-status").textContent = `Sin conexión con el relé, reintentando… (${outbox.length} muestras guardadas)`; setTimeout(() => openLive(code), 3000); } };
+    liveWs.onerror = () => { try { liveWs.close(); } catch {} };
+  }
+  function liveStop() {
+    liveWanted = false; $("btn-live").textContent = "Emitir en directo";
+    if (liveWs) liveWs.close();
+    $("live-status").textContent = `Directo parado (${liveSent} muestras enviadas).`;
+  }
+  setInterval(() => {
+    if (!liveWs || liveWs.readyState !== 1 || !outbox.length) return;
+    const items = outbox.splice(0, 100);
+    try { liveWs.send(JSON.stringify({ type: "samples", items })); liveSent += items.length; } catch { outbox.unshift(...items); }
+  }, 250);
+  $("btn-live").addEventListener("click", () => (liveWanted ? liveStop() : liveConnect()));
+  try { $("room").value = localStorage.getItem("racebox_room") || ""; } catch {}
+
+  // ---- Directo: espectador (PC): ?ver=sala ----
+  function viewerMode() {
+    document.title = `Directo ${VIEW_ROOM} — EST Karting`;
+    for (const id of ["btn-connect", "btn-disconnect", "btn-share", "live-row"]) $(id).style.display = "none";
+    let ws = null;
+    const open = () => {
+      setStatus(`Sala ${VIEW_ROOM}: conectando con el relé…`);
+      ws = new WebSocket(`${RELAY}/?room=${encodeURIComponent(VIEW_ROOM)}&role=view`);
+      ws.onmessage = (ev) => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.type === "room") setStatus(`Sala ${VIEW_ROOM}: ${m.senders ? "EN DIRECTO" : "sin emisor (esperando al móvil)"} · ${m.senders} emisor(es), ${m.viewers} viendo, ${m.received} muestras`, m.senders ? "ok" : "");
+        if (m.type === "samples") for (const d of m.items) { okCount++; render(d, null); }
+      };
+      ws.onclose = () => { setStatus(`Sala ${VIEW_ROOM}: sin conexión con el relé, reintentando…`, "bad"); setTimeout(open, 3000); };
+      ws.onerror = () => { try { ws.close(); } catch {} };
+    };
+    open();
+  }
+
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", disconnect);
   $("btn-share").addEventListener("click", share);
-  if (!navigator.bluetooth) setStatus("Este navegador no tiene Bluetooth para webs. En iPhone ábrelo en Bluefy; en Android, en Chrome.", "bad");
   drawGBall(0, 0);
+  if (VIEW_ROOM) { viewerMode(); return; }
+  if (!navigator.bluetooth) setStatus("Este navegador no tiene Bluetooth para webs. En iPhone ábrelo en Bluefy; en Android, en Chrome.", "bad");
 })();
 </script>
 </body>
