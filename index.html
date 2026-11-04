@@ -34,6 +34,41 @@
   pre { white-space: pre-wrap; word-break: break-all; font-size: .72rem; color: #94a3b8; margin: 6px 0 0; max-height: 220px; overflow: auto; }
   input { background: #0f172a; color: #e2e8f0; border: 1px solid #263049; border-radius: 8px; padding: 12px; font-size: 1rem; flex: 1 1 160px; }
   .note { color: #94a3b8; font-size: .8rem; margin-top: 10px; line-height: 1.4; }
+  .note a { color: #93c5fd; }
+
+  /* ---- Modo TV (?ver=sala&tv=1): pantalla completa, sin scroll, legible a distancia ---- */
+  #tv { display: none; }
+  body.tv { padding: 0; overflow: hidden; height: 100vh; height: 100dvh; }
+  body.tv > :not(#tv):not(script) { display: none !important; }
+  body.tv #tv { display: grid; height: 100%; padding: 2vmin; gap: 2vmin;
+    grid-template-columns: 1.1fr 1.3fr 1fr; grid-template-rows: auto 1fr auto;
+    grid-template-areas: "head head head" "speed trail g" "foot foot foot"; }
+  body.tv.idle { cursor: none; }
+  #tv .panel { background: #131b2e; border: 1px solid #263049; border-radius: 1.5vmin; padding: 2vmin; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  #tv .k { color: #94a3b8; font-size: 2.2vmin; text-transform: uppercase; letter-spacing: .06em; }
+  #tv-head { grid-area: head; display: flex; align-items: center; gap: 2vmin; font-size: 3vmin; font-weight: 700; }
+  #tv-head .room { color: #94a3b8; font-weight: 400; }
+  #tv-live { margin-left: auto; padding: .6vmin 2vmin; border-radius: 99px; background: #1e293b; color: #94a3b8; font-size: 2.6vmin; }
+  #tv-live.on { background: #dc2626; color: #fff; }
+  #tv-live.on::before { content: "● "; animation: blink 1.2s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #tv-speed-panel { grid-area: speed; justify-content: center; }
+  #tv-speed { font-size: 24vmin; font-weight: 800; line-height: .9; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+  #tv-speed-unit { font-size: 4vmin; color: #94a3b8; }
+  .tv-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5vmin; margin-top: 3vmin; }
+  .tv-stats .v { font-size: 5.5vmin; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tv-stats .v small { font-size: 2.4vmin; color: #94a3b8; font-weight: 400; }
+  #tv-trail-panel { grid-area: trail; }
+  #tv-g-panel { grid-area: g; }
+  #tv canvas { flex: 1 1 auto; width: 100%; min-height: 0; display: block; }
+  #tv-g-nums { display: flex; justify-content: space-around; font-size: 4.5vmin; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #tv-g-nums small { display: block; font-size: 2vmin; color: #94a3b8; font-weight: 400; text-align: center; }
+  #tv-foot { grid-area: foot; display: flex; gap: 4vmin; font-size: 2.6vmin; color: #cbd5e1; align-items: center; }
+  #tv-foot span b { color: #e2e8f0; }
+  #tv-foot .hint { margin-left: auto; color: #475569; font-size: 2vmin; }
+  body.tv.stale #tv-speed, body.tv.stale #tv canvas, body.tv.stale .tv-stats, body.tv.stale #tv-g-nums { opacity: .35; }
+  #tv-stale { display: none; color: #f59e0b; font-weight: 700; }
+  body.tv.stale #tv-stale { display: inline; }
 </style>
 </head>
 <body>
@@ -87,6 +122,30 @@
   Todo lo recibido se guarda en memoria; "Compartir registro" lo exporta como archivo.
 </p>
 
+<div id="tv">
+  <div id="tv-head"><span>EST Karting</span><span class="room" id="tv-room"></span><span id="tv-stale">SIN SEÑAL</span><span id="tv-live">conectando…</span></div>
+  <div class="panel" id="tv-speed-panel">
+    <div class="k">Velocidad</div>
+    <div><span id="tv-speed">—</span> <span id="tv-speed-unit">km/h</span></div>
+    <div class="tv-stats">
+      <div><div class="k">Punta</div><div class="v" id="tv-vmax">—<small> km/h</small></div></div>
+      <div><div class="k">G lateral máx.</div><div class="v" id="tv-glat">—<small> g</small></div></div>
+      <div><div class="k">Frenada máx.</div><div class="v" id="tv-gbrk">—<small> g</small></div></div>
+      <div><div class="k">Aceleración máx.</div><div class="v" id="tv-gacc">—<small> g</small></div></div>
+    </div>
+  </div>
+  <div class="panel" id="tv-trail-panel"><div class="k">Recorrido · últimos 60 s</div><canvas id="tv-trail"></canvas></div>
+  <div class="panel" id="tv-g-panel">
+    <div class="k">Fuerzas G</div>
+    <canvas id="tv-gball"></canvas>
+    <div id="tv-g-nums"><div><small>lateral</small><span id="tv-gx">—</span></div><div><small>long.</small><span id="tv-gy">—</span></div></div>
+  </div>
+  <div id="tv-foot">
+    <span>GPS <b id="tv-fix">—</b></span><span>Satélites <b id="tv-sats">—</b></span><span>Batería RaceBox <b id="tv-batt">—</b></span><span>Último dato <b id="tv-age">—</b></span>
+    <span class="hint">clic: pantalla completa · R: borrar máximos</span>
+  </div>
+</div>
+
 <script>
 (() => {
   "use strict";
@@ -99,7 +158,8 @@
 
   const $ = (id) => document.getElementById(id);
   const PARAMS = new URLSearchParams(location.search);
-  const VIEW_ROOM = (PARAMS.get("ver") || "").trim().toLowerCase();   // ?ver=sala → modo espectador (PC)
+  const VIEW_ROOM = (PARAMS.get("ver") || PARAMS.get("tv") || "").trim().toLowerCase();   // ?ver=sala → modo espectador (PC)
+  const TV = PARAMS.has("tv") && PARAMS.get("tv") !== "0";                                     // ?tv=sala o ?ver=sala&tv=1 → modo TV
   const RELAY = PARAMS.get("relay") || "wss://estkarting.com:8445";     // relé de telemetría (relay/relay.js)
   const statusEl = $("status");
   const logEl = $("log");
@@ -200,37 +260,42 @@
     if (okCount % 5 === 0 || !p) {
       $("raw").textContent = (p ? Array.from(p).map((b) => b.toString(16).padStart(2, "0")).join(" ") + "\n\n" : "") + JSON.stringify(d, null, 1);
     }
-    drawGBall(d.gx, d.gy);
-    if (d.fix >= 2 && !(d.latLonFlags & 1)) { trail.push({ t: now, lat: d.lat, lon: d.lon }); while (trail.length && trail[0].t < now - 60000) trail.shift(); drawTrail(); }
+    if (d.fix >= 2 && !(d.latLonFlags & 1)) { trail.push({ t: now, lat: d.lat, lon: d.lon }); while (trail.length && trail[0].t < now - 60000) trail.shift(); }
+    if (TV) { renderTV(d); return; }
+    drawGBall($("gball"), d.gx, d.gy);
+    drawTrail($("trail"));
   }
 
-  function drawGBall(gx, gy) {
-    const c = $("gball"), ctx = c.getContext("2d"), r = c.width / 2;
+  function drawGBall(c, gx, gy, hist) {
+    const ctx = c.getContext("2d"), r = Math.min(c.width, c.height) / 2, cx = c.width / 2, cy = c.height / 2, u = r / 110;
     ctx.clearRect(0, 0, c.width, c.height);
-    ctx.strokeStyle = "#263049"; ctx.lineWidth = 1;
-    for (const k of [0.5, 1, 1.5]) { ctx.beginPath(); ctx.arc(r, r, (k / 2) * r * 0.95, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(r, c.height); ctx.moveTo(0, r); ctx.lineTo(c.width, r); ctx.stroke();
+    ctx.strokeStyle = "#263049"; ctx.lineWidth = Math.max(1, u);
+    for (const k of [0.5, 1, 1.5]) { ctx.beginPath(); ctx.arc(cx, cy, (k / 2) * r * 0.95, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.stroke();
     const scale = r * 0.95 / 2; // 2 g = radio
-    const x = r + Math.max(-2, Math.min(2, gx)) * scale, y = r - Math.max(-2, Math.min(2, gy)) * scale;
-    ctx.fillStyle = "#f59e0b"; ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+    const pt = (x, y) => [cx + Math.max(-2, Math.min(2, x)) * scale, cy - Math.max(-2, Math.min(2, y)) * scale];
+    if (hist) hist.forEach((h, i) => { const [x, y] = pt(h.gx, h.gy); ctx.fillStyle = `rgba(56,189,248,${0.08 + 0.5 * i / hist.length})`; ctx.beginPath(); ctx.arc(x, y, 3 * u, 0, Math.PI * 2); ctx.fill(); });
+    const [x, y] = pt(gx, gy);
+    ctx.fillStyle = "#f59e0b"; ctx.beginPath(); ctx.arc(x, y, 7 * u, 0, Math.PI * 2); ctx.fill();
   }
 
-  function drawTrail() {
-    const c = $("trail"), ctx = c.getContext("2d");
+  function drawTrail(c) {
+    const ctx = c.getContext("2d"), u = c.width / 400;
     ctx.clearRect(0, 0, c.width, c.height);
     if (trail.length < 2) return;
     const lat0 = trail[0].lat, lon0 = trail[0].lon, kx = Math.cos(lat0 * Math.PI / 180) * 111320, ky = 110540;
     const pts = trail.map((q) => ({ x: (q.lon - lon0) * kx, y: (q.lat - lat0) * ky }));
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const q of pts) { minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minY = Math.min(minY, q.y); maxY = Math.max(maxY, q.y); }
-    const span = Math.max(maxX - minX, maxY - minY, 20), s = (c.width - 30) / span;
-    const ox = 15 - minX * s + ((c.width - 30) - (maxX - minX) * s) / 2, oy = 15 + maxY * s + ((c.height - 30) - (maxY - minY) * s) / 2;
-    ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 2; ctx.beginPath();
+    const m = 15 * u, w = c.width - 2 * m, h = c.height - 2 * m;
+    const span = Math.max(maxX - minX, maxY - minY, 20), s = Math.min(w / Math.max(maxX - minX, 20), h / Math.max(maxY - minY, 20));
+    const ox = m - minX * s + (w - (maxX - minX) * s) / 2, oy = m + maxY * s + (h - (maxY - minY) * s) / 2;
+    ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 2 * u; ctx.lineJoin = "round"; ctx.beginPath();
     pts.forEach((q, i) => { const x = ox + q.x * s, y = oy - q.y * s; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
     ctx.stroke();
     const last = pts[pts.length - 1];
-    ctx.fillStyle = "#f59e0b"; ctx.beginPath(); ctx.arc(ox + last.x * s, oy - last.y * s, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#94a3b8"; ctx.font = "11px system-ui"; ctx.fillText(`${span.toFixed(0)} m`, 6, c.height - 6);
+    ctx.fillStyle = "#f59e0b"; ctx.beginPath(); ctx.arc(ox + last.x * s, oy - last.y * s, 5 * u, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#94a3b8"; ctx.font = `${Math.round(11 * u)}px system-ui`; ctx.fillText(`${span.toFixed(0)} m`, 6 * u, c.height - 6 * u);
   }
 
   // ---- Bluetooth ----
@@ -286,7 +351,7 @@
     if (!liveWanted) return;
     $("live-status").textContent = "Conectando con el relé…";
     liveWs = new WebSocket(`${RELAY}/?room=${encodeURIComponent(code)}&role=send`);
-    liveWs.onopen = () => { $("live-status").innerHTML = `Emitiendo en la sala <b>${code}</b>. En el PC: <b>${location.origin}${location.pathname}?ver=${code}</b>`; log("directo: conectado al relé"); };
+    liveWs.onopen = () => { $("live-status").innerHTML = `Emitiendo en la sala <b>${code}</b>. En el PC: <b>${location.origin}${location.pathname}?ver=${code}</b> · TV: <b>?tv=${code}</b>`; log("directo: conectado al relé"); };
     liveWs.onmessage = (ev) => {
       try { const m = JSON.parse(ev.data); if (m.type === "room") $("live-status").innerHTML = `Emitiendo en <b>${code}</b> · ${m.viewers} viendo · ${liveSent} enviadas · ${outbox.length} pendientes. En el PC: <b>?ver=${code}</b>`; } catch {}
     };
@@ -307,19 +372,77 @@
   try { $("room").value = localStorage.getItem("racebox_room") || ""; } catch {}
 
   // ---- Directo: espectador (PC): ?ver=sala ----
+  // ---- Modo TV: mismos datos que el espectador, en pantalla grande ----
+  const peaks = { vmax: 0, glat: 0, gbrk: 0, gacc: 0 };
+  const gHist = [];          // estela de la bola de G (últimos ~2 s)
+  let lastSampleAt = 0;
+  function resetPeaks() { peaks.vmax = peaks.glat = peaks.gbrk = peaks.gacc = 0; for (const k of ["vmax", "glat", "gbrk", "gacc"]) $("tv-" + k).innerHTML = "—<small>" + (k === "vmax" ? " km/h" : " g") + "</small>"; }
+  function fitCanvas(c) {
+    const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  }
+  function renderTV(d) {
+    lastSampleAt = Date.now();
+    document.body.classList.remove("stale");
+    $("tv-speed").textContent = Math.max(0, d.speedKmh).toFixed(0);
+    if (d.fix === 3 && d.speedKmh < 200) peaks.vmax = Math.max(peaks.vmax, d.speedKmh);
+    if (d.speedKmh > 5) { peaks.glat = Math.max(peaks.glat, Math.abs(d.gx)); peaks.gbrk = Math.max(peaks.gbrk, -d.gy); peaks.gacc = Math.max(peaks.gacc, d.gy); }
+    if (peaks.vmax) $("tv-vmax").innerHTML = peaks.vmax.toFixed(0) + "<small> km/h</small>";
+    if (peaks.glat) $("tv-glat").innerHTML = peaks.glat.toFixed(2) + "<small> g</small>";
+    if (peaks.gbrk > 0) $("tv-gbrk").innerHTML = peaks.gbrk.toFixed(2) + "<small> g</small>";
+    if (peaks.gacc > 0) $("tv-gacc").innerHTML = peaks.gacc.toFixed(2) + "<small> g</small>";
+    $("tv-gx").textContent = d.gx.toFixed(2);
+    $("tv-gy").textContent = d.gy.toFixed(2);
+    $("tv-fix").textContent = d.fix === 3 ? "3D" : d.fix === 2 ? "2D" : "sin fix";
+    $("tv-sats").textContent = d.sats;
+    $("tv-batt").textContent = `${d.batt & 0x7f}%${d.batt & 0x80 ? " ⚡" : ""}`;
+    gHist.push({ gx: d.gx, gy: d.gy }); if (gHist.length > 10) gHist.shift();
+    const gc = $("tv-gball"), tc = $("tv-trail");
+    fitCanvas(gc); fitCanvas(tc);
+    drawGBall(gc, d.gx, d.gy, gHist);
+    drawTrail(tc);
+  }
+  function tvMode() {
+    document.body.classList.add("tv");
+    $("tv-room").textContent = `· sala ${VIEW_ROOM}`;
+    resetPeaks();
+    drawGBall($("tv-gball"), 0, 0);
+    // Antigüedad del último dato y aviso "SIN SEÑAL" si pasan >3 s sin muestras.
+    setInterval(() => {
+      if (!lastSampleAt) return;
+      const s = (Date.now() - lastSampleAt) / 1000;
+      $("tv-age").textContent = s < 1.5 ? "ahora" : s < 60 ? `hace ${s.toFixed(0)} s` : `hace ${Math.floor(s / 60)} min`;
+      document.body.classList.toggle("stale", s > 3);
+    }, 500);
+    window.addEventListener("resize", () => { fitCanvas($("tv-gball")); fitCanvas($("tv-trail")); drawTrail($("tv-trail")); drawGBall($("tv-gball"), gHist.at(-1)?.gx || 0, gHist.at(-1)?.gy || 0, gHist); });
+    document.addEventListener("click", () => { if (!document.fullscreenElement && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {}); });
+    document.addEventListener("keydown", (e) => { if (e.key === "r" || e.key === "R") resetPeaks(); if (e.key === "f" || e.key === "F") document.documentElement.requestFullscreen?.().catch(() => {}); });
+    // Ocultar el cursor si no se mueve; mantener la pantalla encendida.
+    let idleT = null;
+    const wake = () => { document.body.classList.remove("idle"); clearTimeout(idleT); idleT = setTimeout(() => document.body.classList.add("idle"), 2500); };
+    document.addEventListener("mousemove", wake); wake();
+    let lock = null;
+    const keepAwake = async () => { try { if (navigator.wakeLock && document.visibilityState === "visible" && !lock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => { lock = null; }); } } catch {} };
+    document.addEventListener("visibilitychange", keepAwake); keepAwake();
+  }
+
   function viewerMode() {
-    document.title = `Directo ${VIEW_ROOM} — EST Karting`;
+    document.title = `${TV ? "TV" : "Directo"} ${VIEW_ROOM} — EST Karting`;
     for (const id of ["btn-connect", "btn-disconnect", "btn-share", "live-row"]) $(id).style.display = "none";
+    if (TV) tvMode();
+    else { const n = document.createElement("p"); n.className = "note"; n.innerHTML = `Para una tele o un proyector: <a href="?ver=${encodeURIComponent(VIEW_ROOM)}&tv=1">abrir en modo TV</a>.`; $("live-row").after(n); }
+    const tvLive = (on, text) => { if (!TV) return; const el = $("tv-live"); el.textContent = text; el.className = on ? "on" : ""; };
     let ws = null;
     const open = () => {
       setStatus(`Sala ${VIEW_ROOM}: conectando con el relé…`);
       ws = new WebSocket(`${RELAY}/?room=${encodeURIComponent(VIEW_ROOM)}&role=view`);
       ws.onmessage = (ev) => {
         let m; try { m = JSON.parse(ev.data); } catch { return; }
-        if (m.type === "room") setStatus(`Sala ${VIEW_ROOM}: ${m.senders ? "EN DIRECTO" : "sin emisor (esperando al móvil)"} · ${m.senders} emisor(es), ${m.viewers} viendo, ${m.received} muestras`, m.senders ? "ok" : "");
+        if (m.type === "room") { setStatus(`Sala ${VIEW_ROOM}: ${m.senders ? "EN DIRECTO" : "sin emisor (esperando al móvil)"} · ${m.senders} emisor(es), ${m.viewers} viendo, ${m.received} muestras`, m.senders ? "ok" : ""); tvLive(!!m.senders, m.senders ? "EN DIRECTO" : "esperando al kart"); }
         if (m.type === "samples") for (const d of m.items) { okCount++; render(d, null); }
       };
-      ws.onclose = () => { setStatus(`Sala ${VIEW_ROOM}: sin conexión con el relé, reintentando…`, "bad"); setTimeout(open, 3000); };
+      ws.onclose = () => { setStatus(`Sala ${VIEW_ROOM}: sin conexión con el relé, reintentando…`, "bad"); tvLive(false, "sin conexión"); setTimeout(open, 3000); };
       ws.onerror = () => { try { ws.close(); } catch {} };
     };
     open();
@@ -328,7 +451,7 @@
   $("btn-connect").addEventListener("click", connect);
   $("btn-disconnect").addEventListener("click", disconnect);
   $("btn-share").addEventListener("click", share);
-  drawGBall(0, 0);
+  drawGBall($("gball"), 0, 0);
   if (VIEW_ROOM) { viewerMode(); return; }
   if (!navigator.bluetooth) setStatus("Este navegador no tiene Bluetooth para webs. En iPhone ábrelo en Bluefy; en Android, en Chrome.", "bad");
 })();
